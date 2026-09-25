@@ -30,6 +30,7 @@ PLUG_HOST = env("PLUG_HOST", required=True)
 NTFY_TOPIC = env("NTFY_TOPIC", required=True)
 NTFY_SERVER = env("NTFY_SERVER", "https://ntfy.sh").rstrip("/")
 NTFY_EMAIL = env("NTFY_EMAIL", "")
+NTFY_TOKEN = env("NTFY_TOKEN", "")
 PING_HOST = env("PING_HOST", "1.1.1.1")
 POLL_SECONDS = int(env("POLL_SECONDS", "30"))
 FAIL_THRESHOLD = int(env("FAIL_THRESHOLD", "2"))
@@ -41,6 +42,8 @@ def send_alert(title, message, priority="urgent", tags=""):
         headers["Tags"] = tags
     if NTFY_EMAIL:
         headers["X-Email"] = NTFY_EMAIL
+    if NTFY_TOKEN:
+        headers["Authorization"] = f"Bearer {NTFY_TOKEN}"
     try:
         resp = requests.post(
             f"{NTFY_SERVER}/{NTFY_TOPIC}",
@@ -48,12 +51,14 @@ def send_alert(title, message, priority="urgent", tags=""):
             headers=headers,
             timeout=10,
         )
-        resp.raise_for_status()
-        log.info("Alert sent: %s", title)
-        return True
     except requests.RequestException as exc:
         log.error("Alert failed: %s", exc)
         return False
+    if not resp.ok:
+        log.error("Alert failed: HTTP %s %s", resp.status_code, resp.text.strip())
+        return False
+    log.info("Alert sent: %s", title)
+    return True
 
 
 async def internet_up():
@@ -109,12 +114,13 @@ async def main():
 
     plug = PlugChecker(PLUG_HOST)
     failures = 0
-    outage_started = None  # set only once an outage alert has gone out
+    down_since = None  # time of the first missed check in the current run
+    alerted = False    # True once an outage alert has actually been delivered
 
     while True:
         if await plug.reachable():
-            if outage_started is not None:
-                duration = fmt_duration(time.time() - outage_started)
+            if alerted:
+                duration = fmt_duration(time.time() - down_since)
                 await asyncio.to_thread(
                     send_alert,
                     "Power restored",
@@ -122,15 +128,18 @@ async def main():
                     "high",
                     "white_check_mark",
                 )
-                outage_started = None
             failures = 0
+            down_since = None
+            alerted = False
         else:
             failures += 1
+            if down_since is None:
+                down_since = time.time()
             log.warning("Plug unreachable (%d in a row)", failures)
-            if outage_started is None and failures >= FAIL_THRESHOLD:
+            if not alerted and failures >= FAIL_THRESHOLD:
                 if await internet_up():
-                    outage_started = time.time()
-                    await asyncio.to_thread(
+                    # Retried on every check until it goes through.
+                    alerted = await asyncio.to_thread(
                         send_alert,
                         "Power outage",
                         "Garage plug stopped answering and the internet is up. "

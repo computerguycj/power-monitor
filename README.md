@@ -15,6 +15,7 @@ otherwise an outage takes the internet down with it and no alert ever fires.
 ## Setup (Raspberry Pi OS)
 
 ```bash
+sudo apt install -y git tzdata-legacy
 git clone https://github.com/computerguycj/power-monitor.git ~/power-monitor
 cd ~/power-monitor
 python3 -m venv venv
@@ -26,6 +27,10 @@ Find the plug's IP:
 ```bash
 venv/bin/kasa discover
 ```
+
+`tzdata-legacy` is needed because Kasa plugs can report old-style time zone
+names like `MST7MDT`, which Debian Trixie no longer installs by default.
+Without it, every check fails and you get false outage alerts.
 
 Give the plug a DHCP reservation in your router so the IP doesn't change.
 
@@ -61,13 +66,20 @@ journalctl -u power-monitor -f
 The unit file assumes user `chris` and `/home/chris/power-monitor`. Edit it if
 yours differ.
 
+## Email alerts
+
+ntfy.sh no longer sends email for anonymous users. To get email too:
+create an ntfy.sh account, verify your address under Account, create an
+access token, and set both `NTFY_EMAIL` and `NTFY_TOKEN`.
+
 ## Configuration
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `PLUG_HOST` | required | Kasa plug IP |
 | `NTFY_TOPIC` | required | ntfy topic, treat it like a password |
-| `NTFY_EMAIL` | none | Also relay alerts to this address |
+| `NTFY_EMAIL` | none | Also relay alerts to this address (needs `NTFY_TOKEN`) |
+| `NTFY_TOKEN` | none | ntfy account access token; required for email on ntfy.sh |
 | `NTFY_SERVER` | `https://ntfy.sh` | Self-hosted ntfy server |
 | `PING_HOST` | `1.1.1.1` | Host used to check the internet |
 | `POLL_SECONDS` | `30` | Time between checks |
