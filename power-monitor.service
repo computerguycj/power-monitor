@@ -1,0 +1,17 @@
+[Unit]
+Description=Garage power outage monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=chris
+WorkingDirectory=/home/chris/power-monitor
+EnvironmentFile=/home/chris/power-monitor/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/chris/power-monitor/venv/bin/python /home/chris/power-monitor/power_monitor.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
